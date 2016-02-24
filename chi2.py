@@ -13,25 +13,22 @@ import utils
 
 ######################################################################################################################
 # CONSTANTS
-# Threshold reference: (http://sites.stat.psu.edu/~mga/401/tables/Chi-square-table.pdf)
 ######################################################################################################################
-MIN_NUMBER_INTERVALS = 2
+SIGLEVELMINUS = 0.1
 
 ######################################################################################################################
-# ChiMerge CLASS
+# Chi2 CLASS
 ######################################################################################################################
-class ChiMerge():
+class Chi2():
     '''
-    1992 by R. Kerber
-    Reference: https://www.aaai.org/Papers/AAAI/1992/AAAI92-019.pdf
+    1995 by Liu et al.
+    Reference: http://sci2s.ugr.es/keel/pdf/specific/congreso/liu1995.pdf
     '''
 
-    def __init__(self, min_expected_value, max_number_intervals, threshold):
+    def __init__(self, alpha, delta):
         '''
-        chi-square distribution table: http://sites.stat.psu.edu/~mga/401/tables/Chi-square-table.pdf
-        :param min_expected_value:
-        :param max_number_intervals:
-        :param threshold:
+        :param alpha: siglevel
+        :param delta: consistency test
         :return:
         '''
         self.data = None
@@ -39,30 +36,25 @@ class ChiMerge():
         self.frequency_matrix = None
         self.frequency_matrix_intervals = None
         self.nclasses = -1
-        self.nattrinutes = -1
+        self.nattributes = -1
         self.degrees_freedom = -1
-        self.min_expected_value = min_expected_value
-        self.min_number_intervals = MIN_NUMBER_INTERVALS
-        self.max_number_intervals = max_number_intervals
-        self.threshold = threshold
+        self.alpha = alpha
+        self.delta = delta
 
-    def loadData(self, data, issorted=False):
+    def loadData(self, data):
         '''
         :param data: numpy matrix
-        :param issorted: boolean, if data is already sorted, no need to sort again (based on attribute_column)
         :return:
         '''
         if type(data) != np.matrix:
             utils.printf('ERROR: data must be a numpy.matrix')
             return
+        self.data = data # no need to sort at this point
+        self.nattributes = self.data.shape[1]-1 # last column refers to class label
+        utils.printf('Data: matrix {}x{}'.format(self.data.shape[0],self.data.shape[1]))
 
-        self.data = data # numpy.matrix (x,2). column index 0 refers to attributes column and index 1 classes
-        if not issorted:
-            self.sorted_data = np.array(np.sort(data.view('i8,i8'), order=['f0'], axis=0).view(np.float))   #always sorting column 0 (attribute column)
-        else:
-            self.sorted_data = np.array(data)
-        utils.printf('Sorted data: matrix {}x{}'.format(self.sorted_data.shape[0],self.sorted_data.shape[1]))
 
+    ### to change ###
     def loadFrequencyMatrix(self, frequency_matrix, unique_attribute_values):
         '''
         :param frequency_matrix: numpy array
@@ -165,7 +157,9 @@ class ChiMerge():
 
         self.chitestvalues = chitest
         utils.printf('END (chi {} > {})\n'.format(smallest, self.threshold))
+    ### to change ###
 
+    
     ##############################################################
     # Printing (output)
     ##############################################################
@@ -173,6 +167,7 @@ class ChiMerge():
     def printInitialSummary(self):
         utils.printf('')
         utils.printf('ROUND 0: Initial values:')
+        utils.printf('- Number of attributes: {}'.format(self.nattributes))
         utils.printf('- Number of classes: {}'.format(self.nclasses))
         utils.printf('- Degrees of Freedom: {} (deprecated)'.format(self.degrees_freedom))
         utils.printf('- Threshold: {}'.format(self.threshold))
