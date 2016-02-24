@@ -7,9 +7,7 @@ Python implementation of ChiMerge, a bottom-up discretization method based on Ch
 
 # Examples
 
-
-1. Database: IRIS
-    - Attribute: 1 (Sepal Width)
+1. Database: IRIS, Attribute: 1 (Sepal Width)
     - Intervals   : [ 2.   2.5  3.   3.4]
     - Chi2: [0-1) :  4.7, [1-2): 17.1, [2-3): 24.2
     - Interval-Class Frequencies (4x3)
