@@ -52,8 +52,8 @@ class ChiMerge():
         :param issorted: boolean, if data is already sorted, no need to sort again (based on attribute_column)
         :return:
         '''
-        if type(data) != np.matrix:
-            utils.printf('ERROR: data must be a numpy.matrix')
+        if type(data) != np.matrix and type(data) != np.array:
+            utils.printf('ERROR: data must be a numpy.matrix or numpy.array')
             return
 
         self.data = data # numpy.matrix (x,2). column index 0 refers to attributes column and index 1 classes
@@ -75,6 +75,7 @@ class ChiMerge():
         self.frequency_matrix_intervals = unique_attribute_values
         self.nclasses = self.frequency_matrix.shape[1]
         self.degrees_freedom = self.nclasses - 1
+        self.printInitialSummary()
 
     def generateFrequencyMatrix(self):
 

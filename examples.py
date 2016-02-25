@@ -5,18 +5,20 @@ __author__ = 'lisette.espin'
 ######################################################################################################################
 import sys
 import numpy as np
+import json
 
 ######################################################################################################################
 # LOCAL DEPENDENCES
 ######################################################################################################################
 from chimerge import ChiMerge
+from chi2 import Chi2
 import utils
 
 ######################################################################################################################
 # FUNCTIONS IRIS DB
 # http://archive.ics.uci.edu/ml/machine-learning-databases/iris/
 ######################################################################################################################
-def example_irisdb(attribute_column, min_expected_value, max_number_intervals, threshold):
+def example_chimerge_irisdb(attribute_column, min_expected_value, max_number_intervals, threshold):
     chi = ChiMerge(min_expected_value, max_number_intervals, threshold)
     data = _readIrisDataset(attribute_column)
     chi.loadData(data, False)
@@ -24,7 +26,15 @@ def example_irisdb(attribute_column, min_expected_value, max_number_intervals, t
     chi.chimerge()
     chi.printFinalSummary()
 
-def _readIrisDataset(attribute_column=0):
+def example_chi2_irisdb(alpha, delta, min_expected_value):
+    chi = Chi2(alpha, delta, min_expected_value)
+    data = _readIrisDataset()
+    chi.loadData(data)
+    chi.printInitialSummary()
+    chi.chi2()
+    # chi.printFinalSummary()
+
+def _readIrisDataset(attribute_column=-1):
     '''
     Reference: http://archive.ics.uci.edu/ml/machine-learning-databases/iris/
     e.g.: 5.1,3.5,1.4,0.2,Iris-setosa
@@ -39,9 +49,14 @@ def _readIrisDataset(attribute_column=0):
     :return:
     '''
 
-    if attribute_column < 0 or attribute_column > 3:
-        utils.printf('ERROR: index {} is not valid in this dataset as attribute column!'.format(attribute_column))
+    if attribute_column < -1 or attribute_column > 3:
+        utils.printf('ERROR: index {} is not valid in this dataset!'.format(attribute_column))
         return
+    if attribute_column == -1:
+        attribute_columns = [0,1,2,3]
+        utils.printf('INFO: You are about to load the complete dataset, including all attribute columns.')
+    else:
+        attribute_columns = [attribute_column]
 
     #pathfn = "data/bezdekIris.data"
     pathfn = "data/iris.data"
@@ -51,11 +66,11 @@ def _readIrisDataset(attribute_column=0):
     with open(pathfn, 'r') as f:
         for line in f:
             tmp = line.split(',')
-            tmp[4] = tmp[4].strip().replace('\n','')
-            if tmp[4] not in vocab:
-                vocab[tmp[4]] = counter
+            class_label = tmp[4].strip().replace('\n','')
+            if class_label not in vocab:
+                vocab[class_label] = counter
                 counter += 1
-            data.append('{} {}'.format(float(tmp[attribute_column]), vocab[tmp[4]]))
+            data.append('{} {}'.format(' '.join(['{}'.format(float(tmp[x])) for x in attribute_columns]), vocab[class_label]))
 
     m =  np.matrix(';'.join([x for x in data]))
     utils.printf('Data: matrix {}x{}'.format(m.shape[0],m.shape[1]))
@@ -89,8 +104,9 @@ def _readToiExample():
 # ChiMerge paper: https://www.aaai.org/Papers/AAAI/1992/AAAI92-019.pdf
 ######################################################################################################################
 if __name__ == '__main__':
-    # example_irisdb(attribute_column=0, min_expected_value=0.5, max_number_intervals=6, threshold=4.61)
-    example_irisdb(attribute_column=1, min_expected_value=0.5, max_number_intervals=6, threshold=4.61)
-    # example_irisdb(attribute_column=2, min_expected_value=0., max_number_intervals=6, threshold=4.61)
-    # example_irisdb(attribute_column=3, min_expected_value=0., max_number_intervals=6, threshold=4.61)
+    example_chimerge_irisdb(attribute_column=0, min_expected_value=0.5, max_number_intervals=6, threshold=4.61)
+    # example_chimerge_irisdb(attribute_column=1, min_expected_value=0.5, max_number_intervals=6, threshold=4.61)
+    # example_chimerge_irisdb(attribute_column=2, min_expected_value=0., max_number_intervals=6, threshold=4.61)
+    # example_chimerge_irisdb(attribute_column=3, min_expected_value=0., max_number_intervals=6, threshold=4.61)
     # toi_example(min_expected_value=0.0, max_number_intervals=6, threshold=2.71)
+    # example_chi2_irisdb(alpha=0.5, delta=0.05, min_expected_value=0.1)

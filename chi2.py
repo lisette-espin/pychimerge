@@ -5,11 +5,13 @@ __author__ = 'lisette.espin'
 ######################################################################################################################
 import numpy as np
 import math
+import json
 
 ######################################################################################################################
 # LOCAL DEPENDENCES
 ######################################################################################################################
 import utils
+from chimerge import ChiMerge
 
 ######################################################################################################################
 # CONSTANTS
@@ -25,70 +27,44 @@ class Chi2():
     Reference: http://sci2s.ugr.es/keel/pdf/specific/congreso/liu1995.pdf
     '''
 
-    def __init__(self, alpha, delta):
+    def __init__(self, alpha, delta, min_expected_value):
         '''
         :param alpha: siglevel
         :param delta: consistency test
         :return:
         '''
         self.data = None
-        self.sorted_data = None
-        self.frequency_matrix = None
-        self.frequency_matrix_intervals = None
+        # self.sorted_data = None
+        # self.frequency_matrix = None
+        # self.frequency_matrix_intervals = None
+        self.chimerge_per_column = None
+        self.alpha_per_column = None
+        self.attribute_can_be_merged = None
         self.nclasses = -1
         self.nattributes = -1
         self.degrees_freedom = -1
         self.alpha = alpha
         self.delta = delta
+        self.chidistribution = None
+        self.min_expected_value = min_expected_value
 
     def loadData(self, data):
         '''
         :param data: numpy matrix
         :return:
         '''
-        if type(data) != np.matrix:
-            utils.printf('ERROR: data must be a numpy.matrix')
+        if type(data) != np.matrix and type(data) != np.array:
+            utils.printf('ERROR: data must be a numpy.matrix or numpy.array')
             return
-        self.data = data # no need to sort at this point
+        self.data = np.array(data) # no need to sort at this point
         self.nattributes = self.data.shape[1]-1 # last column refers to class label
-        utils.printf('Data: matrix {}x{}'.format(self.data.shape[0],self.data.shape[1]))
-
-
-    ### to change ###
-    def loadFrequencyMatrix(self, frequency_matrix, unique_attribute_values):
-        '''
-        :param frequency_matrix: numpy array
-        :return: void
-        '''
-        if type(frequency_matrix) != np.array:
-            utils.printf('ERROR: data must be a numpy.array')
-            return
-        self.frequency_matrix = frequency_matrix
-        self.frequency_matrix_intervals = unique_attribute_values
-        self.nclasses = self.frequency_matrix.shape[1]
+        self.nclasses = np.unique(self.data[:,self.nattributes]).shape[0]
         self.degrees_freedom = self.nclasses - 1
-
-    def generateFrequencyMatrix(self):
-
-        if self.sorted_data is None:
-            utils.printf('ERROR: Your (sorted) data should be loaded!')
-            return
-        if self.sorted_data.shape[1] != 2:
-            utils.printf('ERROR: Your (sorted) matrix should have 2 columns only (attribute, class)')
-            return
-
-        unique_attribute_values, indices = np.unique(self.sorted_data[:,0], return_inverse=True)    # first intervals: unique attribute values
-        unique_class_values = np.unique(self.sorted_data[:,1])                                      # classes (column index 1)
-        self.frequency_matrix = np.zeros((len(unique_attribute_values), len(unique_class_values)))  # init frequency_matrix
-        self.frequency_matrix_intervals = unique_attribute_values                                   # init intervals (unique attribute values)
-        self.nclasses = len(unique_class_values)                                                    # number of classes
-        self.degrees_freedom = self.nclasses - 1                                                    # degress of freedom (look at table)
-
-        # Generating first frequency values (contingency table), number of instances found in data: attribute-class
-        for row in np.unique(indices):
-            for col, clase in enumerate(unique_class_values):
-                self.frequency_matrix[row,col] += np.where(self.sorted_data[np.where(indices == row)][:,1] == clase)[0].shape[0]
-        self.printInitialSummary()
+        self.chimerge_per_column = {colid:None for colid in range(self.nattributes)}
+        self.alpha_per_column = {colid:None for colid in range(self.nattributes)}
+        self.attribute_can_be_merged = {colid:True for colid in range(self.nattributes)}
+        utils.printf('Data: matrix {}x{} ({} numeric attributes)'.format(self.data.shape[0],self.data.shape[1], self.nattributes))
+        self._loadChiDistribution()
 
     def chisqrtest(self, array):
         '''
@@ -111,55 +87,93 @@ class Chi2():
 
         return chisqr
 
-    def chimerge(self):
-        if self.frequency_matrix is None:
-            utils.printf('ERROR: Your frequency matrix should be loaded!')
+    def chi2(self):
+        if self.data is None:
+            utils.printf('ERROR: Your data matrix should be loaded!')
             return
 
-        chitest = {}
-        counter = 0
-        smallest = -1
+        ### Phase1: defining sigLevel values for every numeric attribute, and chimerge for every attribute-column
+        sigLevel0 = self._phase1()
 
-        while self._continue() or self._merge(smallest):
+        ### Phase2: merging attrinutes if needed (vertical-wise)
+        self._phase2(sigLevel0)
 
-            ###
-            # CHI2 TEST
-            ###
-            chitest = {}
-            shape = self.frequency_matrix.shape
-            for r in range(shape[0] - 1):
-                interval = r,r+1
-                chi2 = self.chisqrtest(self.frequency_matrix[[interval],:][0])
-                if chi2 not in chitest:
-                    chitest[chi2] = []
-                chitest[chi2].append( (interval) )
-            smallest = min(chitest.keys())
-            biggest = max(chitest.keys())
+    def _phase1(self):
+        '''
+        Perfomrs phase_1 of the Chi2 algorithm (runs chimerge over each attribute-column)
+        :return: the smallest sigLevel value
+        '''
+        sigLevel0 = self.alpha
+        while self._inConsistency() < self.delta:
+            for attribute_column in range(self.nattributes):    # chimerge for all attribute-columns
+                chimerge = ChiMerge(self.min_expected_value,self.data.shape[0],self.chidistribution[self.alpha])
+                chimerge.loadData(self.data[:,[attribute_column,self.nattributes]],False) # 1 attribute-column and class column (last column)
+                chimerge.generateFrequencyMatrix()
+                chimerge.chimerge()
+                self.chimerge_per_column[attribute_column] = chimerge
 
-            ###
-            # SUMMARY
-            ###
-            counter += 1
-            utils.printf('')
-            utils.printf('ROUND {}: {} intervals. Chi min:{}, Chi max:{}'.format(counter, self.frequency_matrix.shape[0], smallest, biggest))
+                sigLevel0 = self.alpha
+                self.alpha -= self._decreaseSigLevel()
+        return sigLevel0
 
-            ###
-            # MERGE ?
-            ###
-            if self._merge(smallest):
-                utils.printf('MERGING INTERVALS: chi {} -> {}'.format(smallest, chitest[smallest]))
-                for (lower,upper) in list(reversed(chitest[smallest])):                                     # reversed, to be able to remove rows on the fly
-                    for col in range(shape[1]):                                                             # checking columns (to append values from row i+1 ---to be removed--- to row i)
-                        self.frequency_matrix[lower,col] += self.frequency_matrix[upper,col]                # appending frequencies to the remaining interval
-                    self.frequency_matrix = np.delete(self.frequency_matrix, upper, 0)                      # removing interval (because we merged it in the previous step)
-                    self.frequency_matrix_intervals = np.delete(self.frequency_matrix_intervals, upper, 0)  # also removing the corresponding interval (real values)
-                utils.printf('NEW INTERVALS: ({}):{}'.format(len(self.frequency_matrix_intervals),self.frequency_matrix_intervals))
+    def _phase2(self, sigLevel0):
+        self.alpha_per_column = {colid:sigLevel0 for colid in self.alpha_per_column.keys()}
+        while self._attributeColumnsCanBeMerged():
+            for colid,canbemerge in self.attribute_can_be_merged.items():
+                if canbemerge:
+                    chimerge = ChiMerge(self.min_expected_value,self.data.shape[0],self.chidistribution[self.alpha_per_column[colid]])
+                    chimerge.loadData(self.data[:,[colid,self.nattributes]],False) # 1 attribute-column and class column (last column)
+                    chimerge.generateFrequencyMatrix()
+                    chimerge.chimerge()
 
-        self.chitestvalues = chitest
-        utils.printf('END (chi {} > {})\n'.format(smallest, self.threshold))
-    ### to change ###
+                    if self._inConsistency() < self.delta:
+                        self.alpha_per_column[colid] -= self._decreaseSigLevel()
+                    else:
+                        self.attribute_can_be_merged[colid] = False
 
-    
+    def _decreaseSigLevel(self):
+        return SIGLEVELMINUS
+
+    def _inConsistency(self):
+        #1. matrix with all attribute-columns (except class-column)
+        #2. find duplicates (register indexes)
+        #3. for every duplicated instance do:
+        #   3.1. calculate inconsistency_count = (n-ck) where n is the number of time such instance is duplicated and ck the largest number of duplicates of such instance among all classes
+        #4. incosistency rate sum all inconsistency_count and divide by the number of instances (total instances)
+
+        #
+        # IT SHOULD NOT BE OVER RAW DATA, BUT OVER THE MERGED DATA!!!
+        # To be fixed!
+        #
+        if self.data is None:
+            utils.printf('ERROR: Your data matrix should be loaded!')
+            return
+
+        # 1. matrix with only attribute values
+        # 2. identify duplicates
+        unique_values, unique_indexes = np.unique(self.data[:,:self.nattributes-1], return_inverse=True)
+        unique_counts = np.bincount(unique_indexes)
+        matching_instances = unique_values[unique_counts>1]
+        sum_inconsistencies = 0
+        total_instances = unique_indexes.shape[0]
+
+        # 3. calculating inconsistency_count for every instance
+        for matching_instance in matching_instances:
+            c = {}
+            for colid in range(self.nclasses):
+                c[colid] = (self.data[self.data[:,self.nattributes]==colid] == matching_instance).sum()
+            n = sum(c.values())
+            cmax = max(c.values())
+            inconsistency_count = n - cmax
+            sum_inconsistencies += inconsistency_count
+
+        # 4. inconsistency rate
+        inconsistency_rate = sum_inconsistencies / float(total_instances)
+        return inconsistency_rate
+
+    def _attributeColumnsCanBeMerged(self):
+        return not all([flag == False for flag in self.attribute_can_be_merged.values()])
+
     ##############################################################
     # Printing (output)
     ##############################################################
@@ -170,46 +184,15 @@ class Chi2():
         utils.printf('- Number of attributes: {}'.format(self.nattributes))
         utils.printf('- Number of classes: {}'.format(self.nclasses))
         utils.printf('- Degrees of Freedom: {} (deprecated)'.format(self.degrees_freedom))
-        utils.printf('- Threshold: {}'.format(self.threshold))
-        utils.printf('- Max number of intervals: {}'.format(self.max_number_intervals))
-        utils.printf('- Number of (unique) intervals: {}'.format(len(self.frequency_matrix_intervals)))
-        utils.printf('- Frequency matrix: {}x{} (sum {})'.format(self.frequency_matrix.shape[0], self.frequency_matrix.shape[1], self.frequency_matrix.sum()))
-        utils.printf('- Intervals: {}'.format(self.frequency_matrix_intervals))
-
-    def printFinalSummary(self):
-        utils.printf('FINAL SUMMARY')
-        utils.printf('{}{}'.format('Intervals: ',self.frequency_matrix_intervals))
-        utils.printf('{}{}'.format('Chi2: ',', '.join(['[{}-{}):{:5.1f}'.format(v[0][0],v[0][1],k) for k,v in utils.sortDictByValue(self.chitestvalues,False)])))
-        utils.printf('{} ({}x{})\n{}'.format('Interval-Class Frequencies',self.frequency_matrix.shape[0],self.frequency_matrix.shape[1],self.frequency_matrix))
+        utils.printf('- alpha (initial value of sigLevel): {}'.format(self.alpha))
+        utils.printf('- delta (inConsistency level): {}'.format(self.delta))
 
     ##############################################################
     # Handlers
     ##############################################################
 
-    def _merge(self, smallestchi2):
-        return smallestchi2 < self.threshold
-
-    def _continue(self):
-        return self.frequency_matrix.shape[0] >= self.max_number_intervals
-
-    def _getTotalsPerRow(self, narray):
-        '''
-        :param narray: numpy.array 2 consecutive rows from frequeny attribute/class
-        :return: dictionary with total number of observations per i_th row
-        '''
-        shape = narray.shape
-        r = {}
-        for i in range(shape[0]):
-            r[i] = narray[i].sum()
-        return r
-
-    def _getTotalsPerColumn(self, narray):
-        '''
-        :param narray: numpy.array 2 consecutive rows from frequeny attribute/class matrix
-        :return: dictionary with total number of observations per j_th column
-        '''
-        shape = narray.shape
-        c = {}
-        for j in range(shape[1]):
-            c[j] = narray[:,j].sum()
-        return c
+    def _loadChiDistribution(self):
+        with open('data/chisquare_distribution.data','r') as f:
+            data = json.load(f)
+        self.chidistribution = {float(k):v for k,v in data.items()}
+        utils.printf('ChiSquare distribution table loaded. {} sigLevel and {} degrees of freedom.'.format(len(self.chidistribution.keys()),len(self.chidistribution.values()[0])-1))
