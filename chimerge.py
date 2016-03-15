@@ -192,10 +192,10 @@ class ChiMerge():
     ##############################################################
 
     def _continue(self, chi2keys):
-        return self._too_many_intervals() or self._no_more_merges(chi2keys)
+        return self._too_many_intervals() or self._more_merges(chi2keys)
 
-    def _no_more_merges(self, chi2keys):
-        return sum([chi2 > self.threshold for chi2 in chi2keys]) == len(chi2keys)
+    def _more_merges(self, chi2keys):
+        return sum([chi2 > self.threshold for chi2 in chi2keys]) < len(chi2keys)
 
     def _too_many_intervals(self):
         return self.frequency_matrix.shape[0] >= self.max_number_intervals
