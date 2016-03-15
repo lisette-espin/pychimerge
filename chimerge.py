@@ -129,7 +129,7 @@ class ChiMerge():
         counter = 0
         smallest = -1
 
-        while self._continue() or self._merge(smallest):
+        while self._continue(chitest.keys()):
 
             ###
             # CHI2 TEST
@@ -153,16 +153,15 @@ class ChiMerge():
             utils.printf('ROUND {}: {} intervals. Chi min:{}, Chi max:{}'.format(counter, self.frequency_matrix.shape[0], smallest, biggest))
 
             ###
-            # MERGE ?
+            # MERGE
             ###
-            if self._merge(smallest):
-                utils.printf('MERGING INTERVALS: chi {} -> {}'.format(smallest, chitest[smallest]))
-                for (lower,upper) in list(reversed(chitest[smallest])):                                     # reversed, to be able to remove rows on the fly
-                    for col in range(shape[1]):                                                             # checking columns (to append values from row i+1 ---to be removed--- to row i)
-                        self.frequency_matrix[lower,col] += self.frequency_matrix[upper,col]                # appending frequencies to the remaining interval
-                    self.frequency_matrix = np.delete(self.frequency_matrix, upper, 0)                      # removing interval (because we merged it in the previous step)
-                    self.frequency_matrix_intervals = np.delete(self.frequency_matrix_intervals, upper, 0)  # also removing the corresponding interval (real values)
-                utils.printf('NEW INTERVALS: ({}):{}'.format(len(self.frequency_matrix_intervals),self.frequency_matrix_intervals))
+            utils.printf('MERGING INTERVALS: chi {} -> {}'.format(smallest, chitest[smallest]))
+            for (lower,upper) in list(reversed(chitest[smallest])):                                     # reversed, to be able to remove rows on the fly
+                for col in range(shape[1]):                                                             # checking columns (to append values from row i+1 ---to be removed--- to row i)
+                    self.frequency_matrix[lower,col] += self.frequency_matrix[upper,col]                # appending frequencies to the remaining interval
+                self.frequency_matrix = np.delete(self.frequency_matrix, upper, 0)                      # removing interval (because we merged it in the previous step)
+                self.frequency_matrix_intervals = np.delete(self.frequency_matrix_intervals, upper, 0)  # also removing the corresponding interval (real values)
+            utils.printf('NEW INTERVALS: ({}):{}'.format(len(self.frequency_matrix_intervals),self.frequency_matrix_intervals))
 
         self.chitestvalues = chitest
         utils.printf('END (chi {} > {})\n'.format(smallest, self.threshold))
@@ -192,10 +191,13 @@ class ChiMerge():
     # Handlers
     ##############################################################
 
-    def _merge(self, smallestchi2):
-        return smallestchi2 < self.threshold
+    def _continue(self, chi2keys):
+        return self._too_many_intervals() or self._no_more_merges(chi2keys)
 
-    def _continue(self):
+    def _no_more_merges(self, chi2keys):
+        return sum([chi2 > self.threshold for chi2 in chi2keys]) == len(chi2keys)
+
+    def _too_many_intervals(self):
         return self.frequency_matrix.shape[0] >= self.max_number_intervals
 
     def _getTotalsPerRow(self, narray):
